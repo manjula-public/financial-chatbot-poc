@@ -6,6 +6,8 @@ from analyze_data import clean_and_parse_data, get_empty_template
 from forecasting import generate_forecast, calculate_summary_metrics, calculate_executive_summary
 import plotly.graph_objects as go
 import plotly.express as px
+import nest_asyncio
+nest_asyncio.apply()
 
 # --- Setup Page ---
 st.set_page_config(page_title="Financial Chatbot POC", layout="wide")
