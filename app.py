@@ -23,24 +23,33 @@ if 'manual_data' not in st.session_state:
 
 # --- Saving/Loading Persistence ---
 SESSION_FILE = "session_data.json"
+DATA_FILE = "session_data.csv"
 
 def save_session():
     data_to_save = {
         "chat_history": st.session_state.chat_history
-        # Saving dataframe requires serialization, doing it simply here
     }
-    # For dataframe, let's verify if we need to save it to disk for this POC
-    # Ideally yes, but let's stick to in-memory for the session unless user clicks "Save"
     with open(SESSION_FILE, 'w') as f:
         json.dump(data_to_save, f)
-    st.toast("Session Saved Successfully!")
+    
+    # Save Dataframe if exists
+    if st.session_state.data_source is not None:
+        st.session_state.data_source.to_csv(DATA_FILE, index=False)
+        
+    st.toast("Session & Data Saved Successfully!")
 
 def load_session():
     if os.path.exists(SESSION_FILE):
         with open(SESSION_FILE, 'r') as f:
             data = json.load(f)
             st.session_state.chat_history = data.get("chat_history", [])
-        st.toast("Session Loaded!")
+    
+    if os.path.exists(DATA_FILE):
+        try:
+            st.session_state.data_source = pd.read_csv(DATA_FILE)
+            st.toast("Session & Data Loaded!")
+        except Exception as e:
+            st.error(f"Error loading data: {e}")
 
 # --- Sidebar: Settings ---
 with st.sidebar:
@@ -50,10 +59,16 @@ with st.sidebar:
     llm_provider = st.selectbox("Select Provider", ["Google Gemini", "OpenAI", "Local (Ollama)"])
     
     api_key = ""
-    if llm_provider != "Local (Ollama)":
-        api_key = st.text_input(f"Enter {llm_provider} API Key", type="password")
-        os.environ["OPENAI_API_KEY"] = api_key # Temp set for LangChain
+    ollama_model = "llama2" # Default
     
+    if llm_provider == "Google Gemini":
+        api_key = st.text_input("Enter Gemini API Key", type="password")
+    elif llm_provider == "OpenAI":
+        api_key = st.text_input("Enter OpenAI API Key", type="password")
+        os.environ["OPENAI_API_KEY"] = api_key
+    elif llm_provider == "Local (Ollama)":
+        ollama_model = st.text_input("Ollama Model Name", value="llama2", help="e.g. llama2, mistral, llama3")
+
     st.divider()
     
     st.subheader("Forecast Settings")
@@ -272,7 +287,7 @@ if st.session_state.data_source is not None:
                     elif llm_provider == "Local (Ollama)":
                          from langchain_community.chat_models import ChatOllama
                          try:
-                             llm = ChatOllama(model="llama2") 
+                             llm = ChatOllama(model=ollama_model) 
                              res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
                              response = res.content
                          except Exception as ol_err:
