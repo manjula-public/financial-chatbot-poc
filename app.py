@@ -285,7 +285,7 @@ if st.session_state.data_source is not None:
                          # API Key should be set in os.environ["GOOGLE_API_KEY"] usually, 
                          # but we can pass it if the library supports it or set env var earlier.
                          os.environ["GOOGLE_API_KEY"] = api_key
-                         llm = ChatGoogleGenerativeAI(model="gemini-pro")
+                         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
                          res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
                          response = res.content
                          
