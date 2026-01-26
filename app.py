@@ -45,7 +45,7 @@ with st.sidebar:
     st.title("Settings")
     
     st.subheader("LLM Configuration")
-    llm_provider = st.selectbox("Select Provider", ["OpenAI", "Google Gemini", "Local (Ollama)"])
+    llm_provider = st.selectbox("Select Provider", ["Google Gemini", "OpenAI", "Local (Ollama)"])
     
     api_key = ""
     if llm_provider != "Local (Ollama)":
