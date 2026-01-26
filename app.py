@@ -285,7 +285,7 @@ if st.session_state.data_source is not None:
                         res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
                         response = res.content
                     elif llm_provider == "Local (Ollama)":
-                         from langchain_community.chat_models import ChatOllama
+                         from langchain_ollama import ChatOllama
                          try:
                              llm = ChatOllama(model=ollama_model) 
                              res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
