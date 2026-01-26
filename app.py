@@ -145,6 +145,10 @@ if st.session_state.data_source is not None:
         # Input
         user_input = st.chat_input("Ask something about the data (e.g., 'Why did expenses go up in 2026?')")
         
+        # specific prompt for summary
+        if st.button("📝 Generate Detailed Summary Analysis"):
+             user_input = "Please provide a detailed Executive Summary Analysis of the financial trends, including Revenue, Expenses, and Net Profit projections."
+        
         if user_input:
             # 1. User Message
             st.session_state.chat_history.append({"role": "user", "content": user_input})
@@ -160,12 +164,21 @@ if st.session_state.data_source is not None:
                     # Convert dataframe to string/markdown for context
                     context_data = forecast_df.to_markdown()
                     system_prompt = f"""
-                    You are a financial analyst assistant. 
-                    Analyze the following P&L data and answer the user's question.
+                    You are a highly skilled financial analyst assistant (CFO level).
                     
-                    Data:\n{context_data}
+                    Your Goal: Analyze the following P&L data and answer the user's question.
                     
-                    Provide concise, professional insights. Use bullet points/markdown.
+                    Data Context:
+                    {context_data}
+                    
+                    Instructions:
+                    1. If the user asks for a "Summary Analysis" or "Overview":
+                       - Provide a structured Executive Summary.
+                       - Highlight Key Trends (Revenue Growth, Expense changes).
+                       - Identify Risks or Anomalies.
+                       - Provide a specific "Net Profit" analysis.
+                    2. Be professional, concise, and use Markdown (bolding, lists) for readability.
+                    3. If the data contains forecasts (future years), explicitly mention they are projections.
                     """
                     
                     # Call LLM
