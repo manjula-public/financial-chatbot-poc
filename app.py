@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import os
 from analyze_data import clean_and_parse_data, get_empty_template
-from forecasting import generate_forecast, calculate_summary_metrics
+from forecasting import generate_forecast, calculate_summary_metrics, calculate_executive_summary
 import plotly.graph_objects as go
 import plotly.express as px
 
@@ -100,40 +100,120 @@ with tab1:
             st.success("Data loaded for processing!")
 
 # --- Shared Logic: Ensure Data Exists ---
+from forecasting import generate_forecast, calculate_summary_metrics, calculate_executive_summary
+import plotly.graph_objects as go
+import plotly.express as px
+
+# ... (rest of imports)
+
+# ... (inside Shared Logic)
 if st.session_state.data_source is not None:
     # Generate Forecast automatically
     forecast_df = generate_forecast(st.session_state.data_source, start_year, end_year)
     summary_df = calculate_summary_metrics(forecast_df)
+    exec_summary_df = calculate_executive_summary(forecast_df)
     
     # --- Tab 2: Analysis ---
     with tab2:
         st.header("Financial Analysis & Forecast")
         
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.subheader("Forecasted P&L Statement")
-            st.dataframe(forecast_df, use_container_width=True)
+        # --- 1. Executive Summary Table ---
+        st.subheader("Summary Analysis")
+        st.markdown("Detailed breakdown of Revenue, Expenses, and Profitability.")
+        
+        # Formatting for display
+        display_df = exec_summary_df.copy()
+        # Format numbers as currency string for display if desired, or let Streamlit handle it
+        # Let's use Streamlit's column config for better interactivity
+        st.dataframe(
+            display_df.style.format("{:,.2f}"),
+            use_container_width=True
+        )
+
+        st.divider()
+        st.subheader("Visual Insights")
+        
+        # --- 2. Advanced Charts ---
+        col_charts_1, col_charts_2 = st.columns(2)
+        
+        with col_charts_1:
+            # Chart A: Trend Analysis (Area Chart)
+            # Net Sales vs Total Expenses vs Net Profit
+            st.caption("📈 **5-Year Financial Trend**")
             
-        with col2:
-            st.subheader("Key Metrics Trend")
+            # Prepare data for Plotly Express
+            trend_data = summary_df.reset_index().rename(columns={"index": "Year"})
+            # Melt for multiple lines
+            trend_melt = trend_data.melt(id_vars=["Year"], value_vars=["Gross Profit", "Total Expenses", "Net Profit"], var_name="Metric", value_name="Amount")
             
-            # Simple Line Chart for Net Profit
-            if "Net Profit" in summary_df.columns:
-                fig = px.line(summary_df, x=summary_df.index, y="Net Profit", title="Net Profit Trend", markers=True)
-                st.plotly_chart(fig, use_container_width=True)
+            fig_trend = px.area(trend_melt, x="Year", y="Amount", color="Metric", 
+                                color_discrete_map={"Gross Profit": "#2ecc71", "Total Expenses": "#e74c3c", "Net Profit": "#3498db"})
+            st.plotly_chart(fig_trend, use_container_width=True)
+            
+        with col_charts_2:
+             # Chart B: Expense Breakdown (Donut)
+             # Get the last forecasted year for the snapshot
+             last_year = str(end_year)
+             st.caption(f"🍩 **Expense Breakdown ({last_year})**")
+             
+             # Extract expense rows from original DF for the last year
+             # Filter for explicit expense categories
+             expense_keys = ["Marketing", "Salaries", "Rent", "Utilities", "Office", "Professional", "Insurance", "Interest", "Taxes"]
+             
+             # Create a mini dataframe for the pie chart
+             pie_data = []
+             if 'Category' in forecast_df.columns:
+                 for _, row in forecast_df.iterrows():
+                     cat = str(row['Category'])
+                     if any(k.lower() in cat.lower() for k in expense_keys):
+                         val = float(row[last_year]) if last_year in forecast_df.columns else 0
+                         if val > 0:
+                             pie_data.append({"Category": cat, "Amount": val})
+             
+             df_pie = pd.DataFrame(pie_data)
+             if not df_pie.empty:
+                 fig_pie = px.pie(df_pie, values="Amount", names="Category", hole=0.4)
+                 fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                 st.plotly_chart(fig_pie, use_container_width=True)
+             else:
+                 st.info("No detailed expense data found for breakdown.")
+
+        # Chart C: Waterfall (Profit Flow) for Base Year (2024 or Start Year)
+        st.divider()
+        st.subheader(f"Profitability Waterfall ({start_year})")
         
-        # Expense Breakdown Bar Chart (for base year vs last forecast)
-        st.subheader("Expense & Revenue Breakdown")
-        
-        # Prepare data for Plotly
-        # We need to reshape slightly for a good stacked bar or grouped bar
-        # Let's plot Gross Profit vs Total Expenses
-        
-        fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(x=summary_df.index, y=summary_df['Gross Profit'], name='Gross Profit'))
-        fig_bar.add_trace(go.Bar(x=summary_df.index, y=summary_df['Total Expenses'], name='Total Expenses'))
-        fig_bar.update_layout(barmode='group', title="Gross Profit vs Expenses")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        try:
+            val_sales = exec_summary_df.loc["Net Sales", str(start_year)]
+            val_cogs = -abs(exec_summary_df.loc["Direct Cost", str(start_year)]) # COGS is a reduction
+            val_opex = -abs(exec_summary_df.loc["Operating Expenses", str(start_year)])
+            val_tax_int = -abs(exec_summary_df.loc["Interest", str(start_year)] + exec_summary_df.loc["Taxes", str(start_year)])
+            val_net = exec_summary_df.loc["EBIT (Earnings before Interest and Taxes)", str(start_year)] # Approx
+            # Actually, let's do: Sales -> COGS -> Gross Profit -> Opex -> EBIT
+            
+            fig_waterfall = go.Figure(go.Waterfall(
+                name = "20", orientation = "v",
+                measure = ["relative", "relative", "total", "relative", "total"],
+                x = ["Net Sales", "Direct Cost", "Gross Margin", "Opex", "EBIT"],
+                textposition = "outside",
+                text = [f"{val_sales/1000:.1f}k", f"{val_cogs/1000:.1f}k", f"{val_sales+val_cogs:.1f}", f"{val_opex/1000:.1f}k", f"{(val_sales+val_cogs+val_opex)/1000:.1f}k"],
+                y = [val_sales, val_cogs, 0, val_opex, 0],
+                connector = {"line":{"color":"rgb(63, 63, 63)"}},
+            ))
+            # The 'total' measure computes automatically based on previous values? No, Waterfall is tricky.
+            # Simpler setup:
+            fig_waterfall = go.Figure(go.Waterfall(
+                orientation = "v",
+                measure = ["absolute", "relative", "total", "relative", "relative", "total"],
+                x = ["Net Sales", "Direct Cost", "Gross Margin", "Opex", "Interest/Tax", "Net Result"],
+                y = [val_sales, val_cogs, 0, val_opex, val_tax_int, 0],
+                connector = {"line":{"color":"rgb(63, 63, 63)"}},
+            ))
+            
+            fig_waterfall.update_layout(title = "Profit Flow Waterfall", showlegend = True)
+            st.plotly_chart(fig_waterfall, use_container_width=True)
+        except Exception as e:
+            st.error(f"Could not generate Waterfall: {e}")
+
 
     # --- Tab 3: Chatbot ---
     with tab3:

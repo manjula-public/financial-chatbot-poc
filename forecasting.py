@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 
@@ -19,12 +20,6 @@ def generate_forecast(df_input, start_year, end_year):
     # Calculate Growth Rate or Absolute Diff
     # User said: "predict based on year 2024 and 2025"
     # Linear projection: Diff = val_2025 - val_2024. Next year = val_prev + Diff.
-    # OR Percentage Growth: Growth = (val_2025 / val_2024) - 1. Next year = val_prev * (1 + Growth).
-    # Linear is safer for negative numbers/zeros. Percentage explodes on small numbers.
-    # Let's stick to Linear difference for simplicity unless user specifies otherwise, 
-    # BUT for sales, percentage make more sense.
-    # Hybrid approach: If both positive, use CAGR/Percentage. If mixed/zero, use Absolute.
-    # For this POC, let's use a simplified Linear Trend (Line equation).
     
     years_to_predict = range(2026, int(end_year) + 1)
     
@@ -52,11 +47,6 @@ def generate_forecast(df_input, start_year, end_year):
         
         df[str(year)] = new_values
 
-    # Calculate Summaries (Gross Profit, Net Income) if they don't exist
-    # This might be complex if we only have raw rows.
-    # We can rely on the dataframe already having them OR calculate them top-down if we know the structure.
-    # For now, just returning the raw forecast of line items.
-    
     return df
 
 def calculate_summary_metrics(df):
@@ -77,19 +67,6 @@ def calculate_summary_metrics(df):
         if exclude:
             mask = mask & ~df['Category_Clean'].str.contains(exclude, na=False)
         return df[mask][years].sum()
-
-    # Gross Sales
-    gross_sales = sum_by_keyword("gross sales")
-    
-    # COGS
-    cogs = sum_by_keyword("cost of goods sold")
-    
-    # Gross Profit = Sales - COGS (assuming COGS is positive value in sheet, subtracted logically)
-    # The sheet has "Less..." so we need to be careful with signs.
-    # User said: "Less Sales Discounts (enter as negative)" -> so we sum them?
-    # Let's assume standard logic: 
-    # Net Sales = Gross Sales + Discounts + Returns (if entered as negative)
-    # Gross Profit = Net Sales - COGS
     
     # For the POC, we iterate year by year
     results = pd.DataFrame(index=years, columns=["Gross Profit", "Total Expenses", "Net Profit"])
@@ -102,7 +79,12 @@ def calculate_summary_metrics(df):
         # extract specific known keys safely
         def get_val(key):
             try:
-                return float(col_data[col_data.index.str.contains(key, case=False, na=False)].values[0])
+                # Basic fuzzy matching
+                matches = col_data[col_data.index.str.contains(key, case=False, na=False)]
+                if len(matches) > 0:
+                    return float(matches.values[0])
+                else: 
+                     return 0.0
             except:
                 return 0.0
 
@@ -114,14 +96,7 @@ def calculate_summary_metrics(df):
         net_sales = g_sales + discounts + returns
         g_profit = net_sales - cost_goods
         
-        # Sum all expenses (everything else)
-        # Exclude Sales, COGS, and the derived rows themselves
-        expense_mask = ~df['Category_Clean'].str.contains("gross|sales|goods sold|profit|income|expense", regex=True, case=False)
-        # ^ This regex is tricky. Better to just sum the known expense lines if possible.
-        # Let's sum everything BELOW "Gross Profit" implies specific structure.
-        # Simpler: Total Revenue - Net Profit check? No.
-        
-        # Let's just create a simple Total Expenses by summing specific expense fields from requirements
+        # Expenses
         expense_keys = [
             "Marketing", "Salaries", "Payroll", "Travel", "Hosting", "Stationary", 
             "Rent", "Utilities", "Office", "Professional", "Insurance", 
@@ -138,3 +113,97 @@ def calculate_summary_metrics(df):
         results.loc[y, "Net Profit"] = net_profit
         
     return results
+
+def calculate_executive_summary(df):
+    """
+    Generates a high-level summary table matching the requested format:
+    Revenue: Net Sales, Direct Cost, Gross Margin, Gross Margin %
+    Expenses: Operating Expenses, Interest, Taxes, EBIT
+    """
+    df = df.copy()
+    if 'Category_Clean' not in df.columns:
+         df['Category_Clean'] = df['Category'].astype(str).str.lower().str.strip()
+
+    years = [c for c in df.columns if c not in ['Category', 'Category_Clean']]
+    
+    # Initialize result structure
+    # Rows we want
+    rows = [
+        "Net Sales",
+        "Direct Cost",
+        "Gross Margin (Profit)",
+        "Gross Margin %",
+        "Operating Expenses",
+        "Interest",
+        "Taxes",
+        "EBIT (Earnings before Interest and Taxes)"
+    ]
+    
+    summary_df = pd.DataFrame(index=rows, columns=years)
+    
+    for y in years:
+        col_data = df.set_index('Category')[y]
+        
+        def get_val(key_list):
+            total = 0.0
+            for key in key_list:
+                matches = df[df['Category_Clean'].str.contains(key.lower(), na=False)][y]
+                total += matches.sum()
+            return float(total)
+            
+        def get_val_exact(key_fragment):
+             matches = df[df['Category_Clean'].str.contains(key_fragment.lower(), na=False)][y]
+             return float(matches.sum())
+
+        # 1. Revenue
+        # Net Sales = Gross Sales - Discounts (if neg) - Returns. Assuming they are in the sheet.
+        # Simple Sum of "Gross Sales", "Discounts", "Returns" rows
+        net_sales = get_val_exact("Gross Sales") + get_val_exact("Sales Discount") + get_val_exact("Sales Returns")
+        
+        # Direct Cost = Cost of Goods Sold
+        direct_cost = get_val_exact("Cost of Goods Sold")
+        
+        # Gross Margin
+        gross_margin = net_sales - direct_cost # Assuming COGS is positive. If negative in sheet, add it.
+        # User sheet usually has COGS as positive number to be subtracted. 
+        # But let's check: Net Sales 81k, Direct Cost 6.7k => GM 74.3k. So 81 - 6.7. Correct.
+        
+        if net_sales != 0:
+            gm_percent = (gross_margin / net_sales) * 100
+        else:
+            gm_percent = 0.0
+            
+        # 2. Expenses
+        # Operating Expenses: All expenses EXCEPT Interest and Taxes
+        # We can sum known categories
+        opex_keys = [
+             "Marketing", "Salaries", "Payroll", "Travel", "Hosting", "Stationary", 
+            "Rent", "Utilities", "Office", "Professional", "Insurance", 
+            "Depreciation", "Other Operating", "Amortization", "Bad Debt"
+        ]
+        # Exclude Interest, Tax
+        operating_expenses = get_val(opex_keys)
+        
+        # Interest
+        interest = get_val_exact("Interest Expense")
+        
+        # Taxes
+        taxes = get_val_exact("Income Tax") # or just "Taxes"
+        
+        # EBIT
+        # Formula: Gross Margin - Operating Expenses
+        # Wait, usually EBIT = Net Income + Interest + Taxes? 
+        # Or Revenue - COGS - Opex. Yes.
+        ebit = gross_margin - operating_expenses
+        
+        # Populate
+        summary_df.loc["Net Sales", y] = net_sales
+        summary_df.loc["Direct Cost", y] = direct_cost
+        summary_df.loc["Gross Margin (Profit)", y] = gross_margin
+        summary_df.loc["Gross Margin %", y] = gm_percent
+        summary_df.loc["Operating Expenses", y] = operating_expenses
+        summary_df.loc["Interest", y] = interest
+        summary_df.loc["Taxes", y] = taxes
+        summary_df.loc["EBIT (Earnings before Interest and Taxes)", y] = ebit
+        
+    return summary_df
