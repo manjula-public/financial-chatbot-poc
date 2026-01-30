@@ -1,8 +1,0 @@
-1. Install Dependencies: Copy and run this command:
-
-powershell
-& "C:\Users\mhewa\AppData\Local\Programs\Python\Python312\python.exe" -m pip install -r requirements.txt
-2. Run the App: After the installation finishes, run:
-
-powershell
-& "C:\Users\mhewa\AppData\Local\Programs\Python\Python312\python.exe" -m streamlit run app.py

@@ -7,6 +7,15 @@ from forecasting import generate_forecast, calculate_summary_metrics, calculate_
 import plotly.graph_objects as go
 import plotly.express as px
 import nest_asyncio
+import importlib
+import analyze_data
+import forecasting
+importlib.reload(analyze_data)
+importlib.reload(forecasting)
+
+from analyze_data import clean_and_parse_data, get_empty_template
+from forecasting import generate_forecast, calculate_summary_metrics, calculate_executive_summary
+
 nest_asyncio.apply()
 
 # --- Setup Page ---
@@ -56,16 +65,27 @@ with st.sidebar:
     st.title("Settings")
     
     st.subheader("LLM Configuration")
-    llm_provider = st.selectbox("Select Provider", ["Google Gemini", "OpenAI", "Local (Ollama)"])
+    llm_provider = st.selectbox("Select Provider", ["Google Gemini", "OpenAI", "OpenRouter", "Local (Ollama)"])
     
     api_key = ""
     ollama_model = "llama2" # Default
-    
+    openrouter_model = "llama-3.3-70b-instruct:free"
+
     if llm_provider == "Google Gemini":
         api_key = st.text_input("Enter Gemini API Key", type="password")
     elif llm_provider == "OpenAI":
         api_key = st.text_input("Enter OpenAI API Key", type="password")
         os.environ["OPENAI_API_KEY"] = api_key
+    elif llm_provider == "OpenRouter":
+        api_key = st.text_input("Enter OpenRouter API Key", type="password")
+        # Map friendly names to actual IDs
+        model_map = {
+            "Llama 3.3 70B (Free)": "meta-llama/llama-3.3-70b-instruct:free",
+            "DeepSeek R1T2 Chimera (Free)": "tngtech/deepseek-r1t2-chimera:free",
+            "Gemma 3 27B (Free)": "google/gemma-3-27b-it:free"
+        }
+        selected_friendly_name = st.selectbox("Select OpenRouter Model", list(model_map.keys()))
+        openrouter_model = model_map[selected_friendly_name]
     elif llm_provider == "Local (Ollama)":
         ollama_model = st.text_input("Ollama Model Name", value="llama2", help="e.g. llama2, mistral, llama3")
 
@@ -76,11 +96,28 @@ with st.sidebar:
     end_year = st.number_input("End Year (Forecast Limit)", value=2028, step=1)
     
     st.divider()
+    
     st.subheader("Persistence")
     if st.button("Save Session"):
         save_session()
     if st.button("Load Session"):
         load_session()
+        
+    st.divider()
+    with st.expander("💡 Sample Chat Questions"):
+        st.markdown("""
+        **Trends & Growth**
+        * What is the projected revenue growth rate?
+        * Describe the trend in Net Profit.
+        
+        **Expenses**
+        * Top 3 biggest expense categories?
+        * Marketing vs Salaries spend?
+        
+        **Risk**
+        * Any alarming trends?
+        * Is Interest Expense too high?
+        """)
 
 # --- Main Interface ---
 st.title("💰 Financial Forecasting & Chatbot")
@@ -103,7 +140,7 @@ with tab1:
             else:
                 st.success("File uploaded successfully!")
                 st.session_state.data_source = df
-                st.dataframe(df.head())
+                st.dataframe(df, use_container_width=True)
                 
     elif input_method == "Manual Entry":
         st.info("Enter values for 2024 and 2025. Future years will be forecasted.")
@@ -125,6 +162,16 @@ import plotly.express as px
 
 # ... (inside Shared Logic)
 if st.session_state.data_source is not None:
+    # --- DEBUGGING: Inspector ---
+    with st.expander("🕵️ Debug: Inspect Loaded Data (Click if you see 0s)"):
+        st.write("Current Columns:", st.session_state.data_source.columns.tolist())
+        st.write("First 10 Data Rows:")
+        st.dataframe(st.session_state.data_source.head(10))
+        if 'Category' in st.session_state.data_source.columns:
+            st.write("Unique Categories Found:", st.session_state.data_source['Category'].unique().tolist())
+        else:
+             st.error("CRITICAL: 'Category' column missing!")
+
     # Generate Forecast automatically
     forecast_df = generate_forecast(st.session_state.data_source, start_year, end_year)
     summary_df = calculate_summary_metrics(forecast_df)
@@ -242,6 +289,14 @@ if st.session_state.data_source is not None:
         # Input
         user_input = st.chat_input("Ask something about the data (e.g., 'Why did expenses go up in 2026?')")
         
+        # --- Debugging Context ---
+        with st.expander("🔍 View Data Context Sent to AI (Verification)"):
+            if 'forecast_df' in locals():
+                st.dataframe(forecast_df)
+            else:
+                st.info("Dataframe not fully generated yet.")
+        
+        
         # specific prompt for summary
         if st.button("📝 Generate Detailed Summary Analysis"):
              user_input = "Please provide a detailed Executive Summary Analysis of the financial trends, including Revenue, Expenses, and Net Profit projections."
@@ -304,6 +359,19 @@ if st.session_state.data_source is not None:
                          llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=api_key)
                          res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
                          response = res.content
+                    elif llm_provider == "OpenRouter":
+                        from langchain_openai import ChatOpenAI
+                        llm = ChatOpenAI(
+                            base_url="https://openrouter.ai/api/v1",
+                            api_key=api_key,
+                            model=openrouter_model,
+                            default_headers={
+                                "HTTP-Referer": "http://localhost:8501", 
+                                "X-Title": "Financial Chatbot POC"
+                            }
+                        )
+                        res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
+                        response = res.content
                          
                 except Exception as e:
                     response = f"AI Error: {str(e)}"

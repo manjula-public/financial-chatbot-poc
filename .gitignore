@@ -11,3 +11,5 @@ venv/
 # Project Specific
 session_data.json
 .vscode/
+
+Documents/

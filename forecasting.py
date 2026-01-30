@@ -4,30 +4,54 @@ import numpy as np
 
 def generate_forecast(df_input, start_year, end_year):
     """
-    Takes a dataframe with 'Category', '2024', '2025' columns.
-    Forecasts up to end_year based on the trend between 2024 and 2025.
+    Takes a dataframe with 'Category' and Year columns.
+    Dynamically identifies the latest available data years and forecasts
+    up to end_year based on the trend of the last 2 available years.
     """
     # Create a copy to avoid mutating original
     df = df_input.copy()
     
-    # Ensure numeric
-    base_years = [2024, 2025]
-    for y in base_years:
+    # Identify existing years in columns (assuming integer-like column names)
+    existing_years = []
+    for col in df.columns:
+        if str(col).isdigit():
+            existing_years.append(int(col))
+    
+    existing_years.sort()
+    
+    # Ensure numeric for updated columns
+    for y in existing_years:
         col_name = str(y)
-        if col_name in df.columns:
-             df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
+        df[col_name] = pd.to_numeric(df[col_name], errors='coerce').fillna(0)
     
-    # Calculate Growth Rate or Absolute Diff
-    # User said: "predict based on year 2024 and 2025"
-    # Linear projection: Diff = val_2025 - val_2024. Next year = val_prev + Diff.
-    
-    years_to_predict = range(2026, int(end_year) + 1)
-    
-    current_cols = [str(y) for y in base_years if str(y) in df.columns]
-    if len(current_cols) < 2:
-        return df # Can't forecast
+    # We need at least 2 years to calculate a trend
+    if len(existing_years) < 2:
+        return df 
         
+    last_actual_year = existing_years[-1]
+    
+    # If the requested end_year is not beyond our actual data, nothing to do
+    if end_year <= last_actual_year:
+        return df
+
+    years_to_predict = range(last_actual_year + 1, int(end_year) + 1)
+    
+    # Base for trend: Last 2 years
+    base_year_last = str(existing_years[-1])
+    base_year_prev = str(existing_years[-2])
+    
     for year in years_to_predict:
+        # We use a moving trend or fixed trend? 
+        # User implies linear projection.
+        # Let's use the trend from the *Most Recent Actuals* and apply it forward?
+        # Or should we propagate the trend (i.e. if 2026 is predicted, use 2026-2025 for 2027?)
+        # Simple linear projection from last actuals is often safer (Constant Growth)
+        # But if we want "Compound" growth, we use previous year.
+        # Let's stick to the previous logic: New Year = Previous Year + Diff.
+        # But Diff should be calculated from the BASE or dynamically?
+        # Original code: diff = row[prev_year] - row[prev_prev_year]
+        # This implies "Momentum". If 2025 grew by 100 vs 2024, then 2026 grows by 100 vs 2025.
+        
         prev_year = str(year - 1)
         prev_prev_year = str(year - 2)
         
