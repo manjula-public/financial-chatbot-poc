@@ -11,5 +11,6 @@ venv/
 # Project Specific
 session_data.json
 .vscode/
+.openai_key
 
 Documents/

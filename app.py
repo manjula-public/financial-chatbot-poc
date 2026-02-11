@@ -65,19 +65,38 @@ with st.sidebar:
     st.title("Settings")
     
     st.subheader("LLM Configuration")
-    llm_provider = st.selectbox("Select Provider", ["Google Gemini", "OpenAI", "OpenRouter", "Local (Ollama)"])
+    llm_provider = st.selectbox("Select Provider", ["OpenAI", "Google Gemini", "OpenRouter", "Local (Ollama)"], index=0)
     
     api_key = ""
     ollama_model = "llama2" # Default
     openrouter_model = "llama-3.3-70b-instruct:free"
+    openai_model = "gpt-4o" # Default
 
     if llm_provider == "Google Gemini":
-        api_key = st.text_input("Enter Gemini API Key", type="password")
+        api_key = st.text_input("Enter API Key", type="password")
     elif llm_provider == "OpenAI":
-        api_key = st.text_input("Enter OpenAI API Key", type="password")
+        # Load default API key from file if exists
+        default_key = ""
+        if os.path.exists(".openai_key"):
+            try:
+                with open(".openai_key", "r") as f:
+                    # Read all lines and find the first non-comment, non-empty line
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            default_key = line
+                            break
+            except:
+                pass
+        
+        api_key = st.text_input("Enter API Key", type="password", value=default_key)
         os.environ["OPENAI_API_KEY"] = api_key
+        
+        # Model selection for OpenAI
+        openai_model_options = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
+        openai_model = st.selectbox("Select OpenAI Model", openai_model_options, index=0)
     elif llm_provider == "OpenRouter":
-        api_key = st.text_input("Enter OpenRouter API Key", type="password")
+        api_key = st.text_input("Enter API Key", type="password")
         # Map friendly names to actual IDs
         model_map = {
             "Llama 3.3 70B (Free)": "meta-llama/llama-3.3-70b-instruct:free",
@@ -336,7 +355,7 @@ if st.session_state.data_source is not None:
                     # Call LLM
                     if llm_provider == "OpenAI":
                         from langchain_openai import ChatOpenAI
-                        llm = ChatOpenAI(model="gpt-3.5-turbo", api_key=api_key)
+                        llm = ChatOpenAI(model=openai_model, api_key=api_key)
                         res = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=user_input)])
                         response = res.content
                     elif llm_provider == "Local (Ollama)":
