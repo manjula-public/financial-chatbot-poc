@@ -73,21 +73,34 @@ with st.sidebar:
     openai_model = "gpt-4o" # Default
 
     if llm_provider == "Google Gemini":
-        api_key = st.text_input("Enter API Key", type="password")
-    elif llm_provider == "OpenAI":
-        # Load default API key from file if exists
+        # Try to get from Streamlit secrets first (for cloud deployment)
         default_key = ""
-        if os.path.exists(".openai_key"):
-            try:
-                with open(".openai_key", "r") as f:
-                    # Read all lines and find the first non-comment, non-empty line
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith("#"):
-                            default_key = line
-                            break
-            except:
-                pass
+        try:
+            default_key = st.secrets.get("GOOGLE_API_KEY", "")
+        except:
+            pass
+        api_key = st.text_input("Enter API Key", type="password", value=default_key)
+        
+    elif llm_provider == "OpenAI":
+        # Load default API key from Streamlit secrets (cloud) or file (local dev)
+        default_key = ""
+        
+        # Priority 1: Streamlit Cloud secrets
+        try:
+            default_key = st.secrets.get("OPENAI_API_KEY", "")
+        except:
+            # Priority 2: Local .openai_key file (for development)
+            if os.path.exists(".openai_key"):
+                try:
+                    with open(".openai_key", "r") as f:
+                        # Read all lines and find the first non-comment, non-empty line
+                        for line in f:
+                            line = line.strip()
+                            if line and not line.startswith("#"):
+                                default_key = line
+                                break
+                except:
+                    pass
         
         api_key = st.text_input("Enter API Key", type="password", value=default_key)
         os.environ["OPENAI_API_KEY"] = api_key
@@ -96,7 +109,13 @@ with st.sidebar:
         openai_model_options = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
         openai_model = st.selectbox("Select OpenAI Model", openai_model_options, index=0)
     elif llm_provider == "OpenRouter":
-        api_key = st.text_input("Enter API Key", type="password")
+        # Try to get from Streamlit secrets first (for cloud deployment)
+        default_key = ""
+        try:
+            default_key = st.secrets.get("OPENROUTER_API_KEY", "")
+        except:
+            pass
+        api_key = st.text_input("Enter API Key", type="password", value=default_key)
         # Map friendly names to actual IDs
         model_map = {
             "Llama 3.3 70B (Free)": "meta-llama/llama-3.3-70b-instruct:free",
